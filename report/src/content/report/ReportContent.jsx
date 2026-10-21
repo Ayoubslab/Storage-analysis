@@ -49,6 +49,7 @@ export function ReportContent() {
   const { reviewedRows, canEdit, mode, appTitle, setAppTitle } = useDataApp();
   const driveRows = reviewedRows("drive_summary");
   const drive = driveRows[0] ?? {};
+  const volumes = reviewedRows("volumes");
   const categories = reviewedRows("categories");
   const topLevel = reviewedRows("top_level");
   const topDirectories = reviewedRows("top_directories");
@@ -75,13 +76,16 @@ export function ReportContent() {
   const userAppData = category["User application data"]?.allocated_bytes ?? 0;
   const vms = category["VMs & containers"]?.allocated_bytes ?? 0;
   const largestDuplicate = duplicates[0];
-  const usersRoot = topLevel.find((row) => row.path?.toLowerCase() === "c:\\users");
+  const usersBytes = topLevel.filter((row) => /^[a-z]:\\users$/i.test(row.path ?? ""))
+    .reduce((sum, row) => sum + row.allocated_bytes, 0);
+  const volumeNames = volumes.map((row) => row.drive).join(", ");
   const topLocations = topLevel.slice(0, 5).map((row) => `\`${row.path}\` (${formatGiB(row.allocated_bytes)})`).join(", ");
   const topFileSummary = files.slice(0, 5).map((row) => `\`${baseName(row.path)}\` (${formatGiB(row.allocated_bytes)})`).join(", ");
   const topApplicationSummary = applications.slice(0, 4).map((row) => `${row.name} (${formatGiB(row.actual_allocated_bytes)})`).join(", ");
-  const pagefile = files.find((row) => row.path?.toLowerCase() === "c:\\pagefile.sys")?.allocated_bytes;
+  const pagefile = files.find((row) => /^[a-z]:\\pagefile\.sys$/i.test(row.path ?? ""))?.allocated_bytes;
   const sourceRowsByQuery = {
     drive_summary: driveRows,
+    volumes,
     categories,
     top_level: topLevel,
     top_directories: topDirectories,
@@ -94,16 +98,16 @@ export function ReportContent() {
 
   const executiveSummary = `## Executive summary
 
-- **The SSD is ${formatPct(drive.used_bytes / drive.capacity_bytes)} full:** ${formatGiB(drive.used_bytes)} used and ${formatGiB(drive.free_bytes)} free on a ${formatGiB(drive.capacity_bytes)} C: volume.
+- **The scanned storage is ${formatPct(drive.used_bytes / drive.capacity_bytes)} full:** ${formatGiB(drive.used_bytes)} used and ${formatGiB(drive.free_bytes)} free across ${volumes.length} local volume${volumes.length === 1 ? "" : "s"} (${volumeNames || "none"}).
 - **Games are the largest consumer at ${formatGiB(games)}** (${formatPct(games / drive.used_bytes)} of used space). The largest measured application locations are ${topApplicationSummary || "not available"}.
 - **User-owned data is the next major block:** ${formatGiB(userDocs)} of documents/media, ${formatGiB(userAppData)} of application data, ${formatGiB(downloads)} in Downloads, and ${formatGiB(vms)} in VM/container files.
 - **The lowest-risk reclaimable space is ${formatGiB(safeConditional)}** of browser caches and temporary folders, with applications closed or their own cleanup controls used. Larger opportunities require review: ${formatGiB(drive.duplicate_recoverable_bytes)} of exact duplicates, ${formatGiB(recycle)} in the Recycle Bin, and ${formatGiB(downloads)} in Downloads.
 
 No files were deleted, moved, or modified.`;
 
-  const consumerNarrative = `## The user profile and installed software dominate the visible allocation
+  const consumerNarrative = `## User profiles and installed software dominate the visible allocation
 
-The scan attributes **${formatGiB(usersRoot?.allocated_bytes)}** to \`C:\\Users\`—${formatPct(usersRoot?.allocated_bytes / drive.used_bytes)} of used space. The largest top-level locations are ${topLocations || "not available"}.
+The scan attributes **${formatGiB(usersBytes)}** to user-profile roots across the scanned volumes—${formatPct(usersBytes / drive.used_bytes)} of used space. The largest top-level locations are ${topLocations || "not available"}.
 
 Within the mutually exclusive consumer categories, games use ${formatGiB(games)}, user documents and media use ${formatGiB(userDocs)}, user application data uses ${formatGiB(userAppData)}, Downloads uses ${formatGiB(downloads)}, and VM/container files use ${formatGiB(vms)}.`;
 
@@ -133,9 +137,9 @@ The largest group alone represents ${formatGiB(largestDuplicate?.recoverable_byt
 
 The read-only pass measured ${formatGiB(drive.scan_visible_bytes)} of unique allocated file data. A residual **${formatGiB(drive.unaccounted_bytes)}** remains unassigned. Because the process was not elevated, Windows denied direct queries for Volume Shadow Copy storage, restore points, DISM component-store analysis, reserved storage, and NTFS metadata totals. The residual therefore remains one combined uncertainty bucket rather than a speculative split.
 
-Coverage controls worked as intended: ${Number(coverage.hardlink_references_skipped).toLocaleString()} additional hard-link references were excluded, ${Number(coverage.reparse_points_skipped).toLocaleString()} reparse points were recorded but not traversed, and ${Number(coverage.inaccessible_log_rows).toLocaleString()} coverage exceptions were logged (385 directory access denials plus 24 duplicate-hash read failures). For ${Number(coverage.identity_failures).toLocaleString()} files whose identity/allocation metadata could not be read, the scanner used path identity and logical size; those records carry a small residual hard-link double-count risk.
+Coverage controls worked as intended: ${Number(coverage.hardlink_references_skipped).toLocaleString()} additional hard-link references were excluded, ${Number(coverage.reparse_points_skipped).toLocaleString()} reparse points were recorded but not traversed, and ${Number(coverage.inaccessible_log_rows).toLocaleString()} coverage exceptions were logged. For ${Number(coverage.identity_failures).toLocaleString()} files whose identity/allocation metadata could not be read, the scanner used path identity and logical size; those records carry a small residual hard-link double-count risk.
 
-An elevated follow-up can resolve more of the ${formatGiB(drive.unaccounted_bytes)} with \`vssadmin list shadowstorage\`, \`DISM /Online /Cleanup-Image /AnalyzeComponentStore\`, \`DISM /Online /Get-ReservedStorageState\`, and \`fsutil volume diskfree C:\`.`;
+An elevated follow-up can resolve more of the ${formatGiB(drive.unaccounted_bytes)} with \`vssadmin list shadowstorage\`, \`DISM /Online /Cleanup-Image /AnalyzeComponentStore\`, \`DISM /Online /Get-ReservedStorageState\`, and \`fsutil volume diskfree <drive>:\` for each scanned volume.`;
 
   const recommendations = `## Recommended sequence
 
@@ -146,7 +150,7 @@ An elevated follow-up can resolve more of the ${formatGiB(drive.unaccounted_byte
 5. **Decide whether Hibernate is worth ${formatGiB(hibernation)}.** Keep it if you use Hibernate or value its Fast Startup behavior.
 6. **Run an elevated measurement pass before touching system-managed storage.** That is the only responsible way to separate the remaining ${formatGiB(drive.unaccounted_bytes)}.`;
 
-  return <article className="report-content" aria-label="SSD storage report">
+  return <article className="report-content" aria-label="Storage allocation report">
     <header className="report-hero">
       <h1 data-data-app-title contentEditable={canEdit && mode === "edit"} suppressContentEditableWarning
         aria-label={canEdit && mode === "edit" ? "Edit report heading" : undefined}
@@ -158,24 +162,24 @@ An elevated follow-up can resolve more of the ${formatGiB(drive.unaccounted_byte
     </header>
 
     <ReportSection id="report-summary" title="Executive summary" queryId="drive_summary"
-      queryIds={["drive_summary", "categories", "cleanup_opportunities", "duplicate_groups"]}
-      sourceRowsByQuery={{ drive_summary: driveRows, categories, cleanup_opportunities: cleanup, duplicate_groups: duplicates }}
+      queryIds={["drive_summary", "volumes", "categories", "cleanup_opportunities", "duplicate_groups"]}
+      sourceRowsByQuery={{ drive_summary: driveRows, volumes, categories, cleanup_opportunities: cleanup, duplicate_groups: duplicates }}
       showHeading={false}>
       <RichNarrative id="report-summary:body" value={executiveSummary} label="Edit executive summary" />
     </ReportSection>
 
     <div className="report-facts" aria-label="Key storage metrics">
       <MetricCard id="report-used" title="Used space" queryId="drive_summary" sourceRows={driveRows}
-        value={formatGiB(drive.used_bytes)} comparison={formatPct(drive.used_bytes / drive.capacity_bytes)} description="Windows-reported used volume space." />
+        value={formatGiB(drive.used_bytes)} comparison={formatPct(drive.used_bytes / drive.capacity_bytes)} description="Combined Windows-reported used space across scanned volumes." />
       <MetricCard id="report-free" title="Free space" queryId="drive_summary" sourceRows={driveRows}
-        value={formatGiB(drive.free_bytes)} comparison={formatPct(drive.free_bytes / drive.capacity_bytes)} description="Windows-reported free volume space." />
+        value={formatGiB(drive.free_bytes)} comparison={formatPct(drive.free_bytes / drive.capacity_bytes)} description="Combined Windows-reported free space across scanned volumes." />
       <MetricCard id="report-visible" title="Directly attributed" queryId="drive_summary" sourceRows={driveRows}
         value={formatGiB(drive.scan_visible_bytes)} comparison={formatPct(drive.scan_visible_bytes / drive.used_bytes)} description="Unique allocated file data measured by the scanner." />
       <MetricCard id="report-duplicates" title="Exact duplicate potential" queryId="duplicate_groups" sourceRows={duplicates}
         value={formatGiB(drive.duplicate_recoverable_bytes)} comparison={`${Number(drive.duplicate_group_count).toLocaleString()} groups`} description="Review only; duplicate paths may serve different application roles." />
     </div>
 
-    <ReportSection id="report-consumers" title="Half of used space sits under the user profile" queryId="categories" queryIds={["categories", "top_level", "top_directories"]}
+    <ReportSection id="report-consumers" title="Largest user and software locations" queryId="categories" queryIds={["categories", "top_level", "top_directories"]}
       sourceRowsByQuery={{ categories, top_level: topLevel, top_directories: topDirectories }} showHeading={false}>
       <RichNarrative id="report-consumers:body" value={consumerNarrative} label="Edit storage-consumer analysis" />
     </ReportSection>

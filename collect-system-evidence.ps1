@@ -1,9 +1,17 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string] $OutputPath
+    [string] $OutputPath,
+    [string[]] $Roots
 )
 
 $ErrorActionPreference = 'Continue'
+if (-not $Roots) {
+    $eligibleTypes = @([IO.DriveType]::Fixed, [IO.DriveType]::Removable)
+    $Roots = @([IO.DriveInfo]::GetDrives() |
+        Where-Object { $_.IsReady -and $eligibleTypes -contains $_.DriveType } |
+        ForEach-Object { $_.RootDirectory.FullName } |
+        Sort-Object -Unique)
+}
 
 function Invoke-CapturedCommand {
     param([string] $FilePath, [string[]] $ArgumentList)
@@ -39,13 +47,16 @@ $diskRows = @(Get-PhysicalDisk | ForEach-Object {
 })
 
 $specialFiles = @()
-foreach ($specialPath in @('C:\pagefile.sys', 'C:\hiberfil.sys', 'C:\swapfile.sys', 'C:\DumpStack.log.tmp', 'C:\MEMORY.DMP')) {
+foreach ($root in $Roots) {
+foreach ($name in @('pagefile.sys', 'hiberfil.sys', 'swapfile.sys', 'DumpStack.log.tmp', 'MEMORY.DMP')) {
+    $specialPath = Join-Path $root $name
     try {
         $item = Get-Item -LiteralPath $specialPath -Force -ErrorAction Stop
         $specialFiles += [ordered]@{ path = $specialPath; visible = $true; logical_bytes = [long]$item.Length; error = $null }
     } catch {
         $specialFiles += [ordered]@{ path = $specialPath; visible = $false; logical_bytes = $null; error = $_.Exception.Message }
     }
+}
 }
 
 $pageFiles = @()
@@ -141,6 +152,13 @@ try {
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 
+$diskFreeCommands = @($Roots | ForEach-Object {
+    Invoke-CapturedCommand 'fsutil.exe' @('volume', 'diskfree', $_.TrimEnd('\'))
+})
+$ntfsInfoCommands = @($Roots | ForEach-Object {
+    Invoke-CapturedCommand 'fsutil.exe' @('fsinfo', 'ntfsinfo', $_.TrimEnd('\'))
+})
+
 $evidence = [ordered]@{
     captured_utc = [DateTime]::UtcNow.ToString('o')
     user = $identity.Name
@@ -155,8 +173,8 @@ $evidence = [ordered]@{
     shadow_copies = $shadowCopies
     restore_points = $restorePoints
     commands = [ordered]@{
-        fsutil_diskfree = Invoke-CapturedCommand 'fsutil.exe' @('volume', 'diskfree', 'C:')
-        fsutil_ntfsinfo = Invoke-CapturedCommand 'fsutil.exe' @('fsinfo', 'ntfsinfo', 'C:')
+        fsutil_diskfree = $diskFreeCommands
+        fsutil_ntfsinfo = $ntfsInfoCommands
         component_store = Invoke-CapturedCommand 'dism.exe' @('/Online', '/Cleanup-Image', '/AnalyzeComponentStore', '/English')
         reserved_storage = Invoke-CapturedCommand 'dism.exe' @('/Online', '/Get-ReservedStorageState', '/English')
         shadow_storage = Invoke-CapturedCommand 'vssadmin.exe' @('list', 'shadowstorage')

@@ -101,7 +101,7 @@ function TreeMap({ root, usedBytes }) {
         <button type="button" onClick={() => setTrail((items) => items.slice(0, index + 1))}>{node.name}</button>
       </React.Fragment>)}
     </div>
-    <div className="treemap-plot" role="group" aria-label={`Storage treemap for ${current?.path ?? "C:"}`}>
+    <div className="treemap-plot" role="group" aria-label={`Storage treemap for ${current?.path ?? "all storage"}`}>
       {rectangles.map((rect, index) => {
         const share = current?.allocated_bytes ? rect.allocated_bytes / current.allocated_bytes : 0;
         const canDrill = (rect.children ?? []).length > 1;
@@ -118,7 +118,7 @@ function TreeMap({ root, usedBytes }) {
       {hovered && <div className="treemap-tooltip" role="status">
         <strong>{hovered.name}</strong>
         <span>{formatGiB(hovered.allocated_bytes)} · {formatPercent(hovered.allocated_bytes / current.allocated_bytes)} of this folder</span>
-        <span>{formatPercent(hovered.allocated_bytes / usedBytes)} of used C: space</span>
+        <span>{formatPercent(hovered.allocated_bytes / usedBytes)} of all used scanned space</span>
         <code>{hovered.path}</code>
       </div>}
     </div>
@@ -132,6 +132,15 @@ const directoryColumns = [
   { field: "allocated_gib", label: "Allocated", renderCell: (value) => `${value.toFixed(2)} GiB` },
   { field: "percent_used", label: "% used", presentation: "percent" },
   { field: "file_count", label: "Files" },
+];
+
+const volumeColumns = [
+  { field: "drive", label: "Volume", presentation: "identity", secondaryField: "label" },
+  { field: "file_system", label: "Filesystem" },
+  { field: "used_bytes", label: "Used", renderCell: (value) => formatGiB(value) },
+  { field: "free_bytes", label: "Free", renderCell: (value) => formatGiB(value) },
+  { field: "scan_visible_bytes", label: "Attributed", renderCell: (value) => formatGiB(value) },
+  { field: "used_percent", label: "% full", presentation: "percent" },
 ];
 
 const fileColumns = [
@@ -161,6 +170,7 @@ export function DashboardContent() {
   const { reviewedRows } = useDataApp();
   const driveRows = reviewedRows("drive_summary");
   const drive = driveRows[0] ?? {};
+  const volumes = reviewedRows("volumes");
   const categories = reviewedRows("categories");
   const topLevel = reviewedRows("top_level").slice(0, 16);
   const directories = reviewedRows("top_directories");
@@ -195,8 +205,8 @@ export function DashboardContent() {
     <section id="overview" className="storage-section">
       <SectionHeader id="storage:overview-title" title="Drive overview" />
       <div className="metric-grid">
-        <MetricCard id="capacity-summary" title="C: capacity" queryId="drive_summary" sourceRows={driveRows}
-          value={formatGiB(drive.capacity_bytes)} description="Windows-reported NTFS volume capacity." />
+        <MetricCard id="capacity-summary" title="Total capacity" queryId="drive_summary" sourceRows={driveRows}
+          value={formatGiB(drive.capacity_bytes)} comparison={`${Number(drive.volume_count ?? volumes.length).toLocaleString()} volumes`} description="Combined Windows-reported capacity of scanned local volumes." />
         <MetricCard id="used-summary" title="Used" queryId="drive_summary" sourceRows={driveRows}
           value={formatGiB(drive.used_bytes)} comparison={formatPercent(usedRatio)} description="Windows-reported used volume space at evidence capture." />
         <MetricCard id="free-summary" title="Free" queryId="drive_summary" sourceRows={driveRows}
@@ -222,20 +232,26 @@ export function DashboardContent() {
         </div>
       </DataComponent>
 
+      <DataComponent variant="card" id="volume-table" queryId="volumes" title="Scanned volumes"
+        kind="table" sourceRows={volumes} displayRows={volumes}
+        description="Every ready local fixed or removable filesystem volume discovered when the run started.">
+        <DataTable rows={volumes} columns={volumeColumns} rowKey="drive" searchable={false} />
+      </DataComponent>
+
       <Section columns={2} spacing="content">
         <EvidenceChart variant="card" id="category-breakdown" title="Storage by consumer type" queryId="categories"
           spec={categoryChart} rows={categories} sourceRows={categories} height={430}
           description="Mutually exclusive path-based categories; bars sum to scan-visible allocated bytes." />
         <EvidenceChart variant="card" id="top-level-breakdown" title="Largest top-level folders" queryId="top_level"
           spec={topLevelChart} rows={topLevel} sourceRows={topLevel} height={430}
-          description="Direct children of C:. Folder values are actual allocated bytes after hard-link deduplication." />
+          description="Largest direct children across all scanned volumes. Folder values are actual allocated bytes after hard-link deduplication." />
       </Section>
     </section>
 
     <section id="map" className="storage-section">
       <SectionHeader id="storage:map-title" title="Hierarchical storage map" />
       {hierarchy ? <DataComponent variant="card" padding="spacious" id="storage-treemap" queryId="hierarchy"
-        title="C: treemap" kind="custom" sourceRows={hierarchyRows} displayRows={hierarchyRows}
+        title="All-storage treemap" kind="custom" sourceRows={hierarchyRows} displayRows={hierarchyRows}
         description="Area encodes allocated bytes. Select a folder rectangle to drill down; use the breadcrumb to move back up.">
         <TreeMap root={hierarchy} usedBytes={drive.used_bytes} />
       </DataComponent> : <div className="empty-state">Hierarchy data is unavailable.</div>}

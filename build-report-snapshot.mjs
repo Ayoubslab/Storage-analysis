@@ -12,7 +12,7 @@ const asOf = String(snapshot.generatedAt ?? new Date().toISOString()).slice(0, 1
 
 snapshot.id = 'report:3bde730a-c6ec-4256-ba20-2a5d7ae8c23c';
 snapshot.surface = 'report';
-snapshot.title = `SSD allocation analysis — ${usedPercent}% full`;
+snapshot.title = `Storage allocation analysis — ${usedPercent}% full`;
 snapshot.buildStatus = 'complete';
 snapshot.filters = [];
 snapshot.report = { asOf, visibleFilterIds: [] };

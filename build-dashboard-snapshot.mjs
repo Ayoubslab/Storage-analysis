@@ -7,6 +7,7 @@ const sourcePrefix = process.argv[4] ?? 'storage-analysis/data';
 const data = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
 const sourceFiles = data.provenance.source_files.map((file) => `${sourcePrefix}/${file}`);
 const executedAt = data.metadata.generated_utc;
+const scannedRoots = (data.drive.scanned_volumes ?? []).map((volume) => `${volume.drive_letter}:`);
 
 function source(label, files, caveats = [], metricDefinitions = []) {
   return {
@@ -16,13 +17,13 @@ function source(label, files, caveats = [], metricDefinitions = []) {
     sourceFiles: files,
     executedAt,
     filters: [
-      `C: inventory captured ${data.metadata.scan_started_utc} to ${data.metadata.scan_completed_utc}`,
+      `${scannedRoots.join(', ')} inventory captured ${data.metadata.scan_started_utc} to ${data.metadata.scan_completed_utc}`,
       `Duplicate content hashing threshold: ${data.metadata.duplicate_hash_threshold_bytes} bytes`,
     ],
     caveats,
     metricDefinitions,
     evidenceFlow: [
-      { title: 'Enumerate', detail: 'Recursively enumerated accessible C: directories without following directory reparse points.' },
+      { title: 'Enumerate', detail: 'Recursively enumerated all accessible local fixed and removable volumes without following directory reparse points.' },
       { title: 'Measure allocation', detail: 'Read NTFS allocation size and file identity using Windows file-handle metadata.' },
       { title: 'Deduplicate filesystem identities', detail: 'Counted each NTFS volume/file ID once; retained extra hard-link references separately.' },
       { title: 'Aggregate and classify', detail: 'Aggregated unique allocated bytes to directories, categories, rankings, and cleanup review classes.' },
@@ -34,7 +35,7 @@ function source(label, files, caveats = [], metricDefinitions = []) {
 const snapshot = {
   id: 'dashboard:05f9d42a-3417-4513-86b1-8df413fbd24f',
   surface: 'dashboard',
-  title: 'SSD storage analysis',
+  title: 'Storage allocation analysis',
   generatedAt: executedAt,
   status: 'observed',
   buildStatus: 'complete',
@@ -42,7 +43,8 @@ const snapshot = {
   queries: {
     drive_summary: {
       rows: [{
-        drive: 'C:',
+        drive: scannedRoots.join(', '),
+        volume_count: scannedRoots.length,
         capacity_bytes: data.drive.capacity_bytes,
         used_bytes: data.drive.used_bytes,
         free_bytes: data.drive.free_bytes,
@@ -63,14 +65,31 @@ const snapshot = {
         { label: 'Unaccounted/protected bytes', definition: 'Windows-reported used bytes minus scan-visible allocated bytes; includes protected allocations, filesystem metadata, and timing differences.', formula: 'used_bytes - scan_visible_bytes', dependencies: ['used_bytes', 'scan_visible_bytes'], componentIds: ['coverage-card', 'accounting-waterfall'] },
       ]),
     },
+    volumes: {
+      rows: (data.drive.scanned_volumes ?? []).map((volume) => ({
+        drive: `${volume.drive_letter}:`,
+        label: volume.label,
+        file_system: volume.file_system,
+        drive_type: volume.drive_type,
+        capacity_bytes: volume.capacity_bytes,
+        used_bytes: volume.used_bytes,
+        free_bytes: volume.free_bytes,
+        scan_visible_bytes: volume.scan_visible_allocated_bytes,
+        unaccounted_bytes: volume.unaccounted_or_protected_bytes,
+        used_percent: volume.capacity_bytes ? volume.used_bytes / volume.capacity_bytes : null,
+      })),
+      source: source('Per-volume Windows metadata and measured allocation', sourceFiles, [
+        'Only ready local fixed and removable filesystem volumes are scanned; optical and network drives are excluded.',
+      ]),
+    },
     categories: {
       rows: data.breakdowns.categories.map((row) => ({
         category: row.name,
         allocated_bytes: row.allocated_bytes,
         allocated_gib: row.allocated_bytes / 2 ** 30,
         file_count: row.file_count,
-        percent_used: row.allocated_bytes / data.drive.used_bytes,
-        percent_capacity: row.allocated_bytes / data.drive.capacity_bytes,
+        percent_used: data.drive.used_bytes ? row.allocated_bytes / data.drive.used_bytes : null,
+        percent_capacity: data.drive.capacity_bytes ? row.allocated_bytes / data.drive.capacity_bytes : null,
       })),
       source: source('Classified unique file inventory', ['storage-analysis/data/files.csv.gz'], [
         'Categories are mutually exclusive path-based classifications and sum to scan-visible allocated bytes.',
@@ -84,7 +103,7 @@ const snapshot = {
         allocated_gib: row.allocated_bytes / 2 ** 30,
         logical_bytes: row.logical_bytes,
         file_count: row.file_count,
-        percent_used: row.allocated_bytes / data.drive.used_bytes,
+        percent_used: data.drive.used_bytes ? row.allocated_bytes / data.drive.used_bytes : null,
       })),
       source: source('Aggregated NTFS directory inventory', ['storage-analysis/data/directories.csv.gz']),
     },
@@ -98,7 +117,7 @@ const snapshot = {
         logical_bytes: row.logical_bytes,
         file_count: row.file_count,
         unknown_identity_files: row.unknown_identity_files,
-        percent_used: row.allocated_bytes / data.drive.used_bytes,
+        percent_used: data.drive.used_bytes ? row.allocated_bytes / data.drive.used_bytes : null,
       })),
       source: source('Aggregated NTFS directory inventory', ['storage-analysis/data/directories.csv.gz'], [
         'Ranked directories are nested and therefore overlap; do not add them together.',
@@ -114,7 +133,7 @@ const snapshot = {
         logical_bytes: row.logical_bytes,
         last_write_utc: row.last_write_utc,
         age_bucket: row.age_bucket,
-        percent_used: row.allocated_bytes / data.drive.used_bytes,
+        percent_used: data.drive.used_bytes ? row.allocated_bytes / data.drive.used_bytes : null,
       })),
       source: source('Large-file inventory (files allocating at least 50 MiB)', ['storage-analysis/data/large_files.csv']),
     },

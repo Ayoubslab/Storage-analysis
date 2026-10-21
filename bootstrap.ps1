@@ -1,6 +1,6 @@
 param(
     [switch] $CheckOnly,
-    [string] $InstallRoot = (Join-Path $env:LOCALAPPDATA 'SSD-Allocation-Based-Scan'),
+    [string] $InstallRoot = (Join-Path $env:LOCALAPPDATA 'Storage-Allocation-Based-Scan'),
     [string] $SourceDirectory
 )
 
@@ -9,7 +9,7 @@ Set-StrictMode -Version 2.0
 
 $repositoryArchive = 'https://github.com/Ayoubslab/Storage-analysis/archive/refs/heads/main.zip'
 $nodeReleaseRoot = 'https://nodejs.org/dist/latest-v22.x'
-$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("ssd-allocation-bootstrap-{0}" -f [guid]::NewGuid().ToString('N'))
+$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("storage-allocation-bootstrap-{0}" -f [guid]::NewGuid().ToString('N'))
 
 function Assert-NativeSuccess {
     param([string] $Step)
@@ -42,7 +42,7 @@ function Test-SupportedNode {
 function Find-UsableNode {
     $candidates = @(
         @(
-            $env:SSD_SCAN_NODE,
+            $env:STORAGE_SCAN_NODE,
             (Join-Path $InstallRoot '.runtime\node\node.exe')
         ) | Where-Object { $_ }
     )
@@ -152,7 +152,7 @@ if (-not $env:LOCALAPPDATA) {
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ProgressPreference = 'SilentlyContinue'
 
-Write-Host 'SSD Allocation-Based Scan - bootstrap' -ForegroundColor Cyan
+Write-Host 'Storage Allocation-Based Scan - bootstrap' -ForegroundColor Cyan
 Write-Host "Installation: $InstallRoot"
 Write-Host 'No system-wide software will be installed.'
 
@@ -188,8 +188,8 @@ try {
 
     $previousPath = $env:PATH
     $env:PATH = "$nodeDirectory;$previousPath"
-    $env:SSD_SCAN_NODE = $node.Path
-    $env:SSD_SCAN_NPM = $npm
+    $env:STORAGE_SCAN_NODE = $node.Path
+    $env:STORAGE_SCAN_NPM = $npm
     try {
         Write-Host '[3/5] Reinstalling and verifying locked dashboard dependencies...'
         Push-Location (Join-Path $InstallRoot 'dashboard')

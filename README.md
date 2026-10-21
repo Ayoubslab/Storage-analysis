@@ -1,6 +1,6 @@
-# SSD Allocation-Based Scan
+# Storage Allocation-Based Scan
 
-A read-only Windows storage-analysis toolkit that measures actual NTFS file allocation, maps disk usage hierarchically, detects exact duplicate files, records inaccessible areas, and generates interactive dashboard and report artifacts.
+A read-only Windows storage-analysis toolkit that discovers every ready local fixed or removable filesystem volume, measures actual file allocation, maps usage hierarchically, detects exact duplicate files, records inaccessible areas, and generates interactive dashboard and report artifacts.
 
 Unlike application lists that rely on estimated installation sizes, this project walks the filesystem and records both logical and allocated bytes. It protects the analysis from common sources of double-counting by identifying hard-linked files and refusing to traverse junctions or symbolic links.
 
@@ -8,7 +8,7 @@ Unlike application lists that rely on estimated installation sizes, this project
 
 ## What it analyzes
 
-- Drive capacity, used space, free space, and scan-attributed allocation
+- Combined and per-volume capacity, used space, free space, and scan-attributed allocation
 - Hierarchical directory and file usage
 - Hidden, system, application-data, and program-data locations that are accessible to the current Windows account
 - Large folders, individual files, applications, games, downloads, caches, development environments, and virtual disks
@@ -38,7 +38,7 @@ The bootstrap performs these checks on every launch:
 4. Reinstalls the exact dependency tree from both `package-lock.json` files with `npm ci`
 5. Runs the project's complete preflight self-check before scanning
 
-The project is installed under `%LOCALAPPDATA%\SSD-Allocation-Based-Scan`. Nothing is installed system-wide and no administrator access is required for installation. Internet access is required for the bootstrap and dependency download.
+The project is installed under `%LOCALAPPDATA%\Storage-Allocation-Based-Scan`. Nothing is installed system-wide and no administrator access is required for installation. Internet access is required for the bootstrap and dependency download.
 
 To install or repair every requirement without starting a disk scan, run:
 
@@ -51,10 +51,10 @@ INSTALL-AND-RUN.bat -CheckOnly
 Double-click:
 
 ```text
-RUN-SSD-ANALYSIS.bat
+RUN-STORAGE-ANALYSIS.bat
 ```
 
-Each execution creates a new timestamped directory under `runs/`, preserving previous results. A complete scan commonly takes 15–30 minutes and can take longer on systems with millions of files. `RUN-SSD-ANALYSIS.bat` uses the requirements already provisioned by the bootstrap and does not download updates.
+Each execution creates a new timestamped directory under `runs/`, preserving previous results. It scans every ready local fixed or removable filesystem volume detected at startup; network and optical drives are excluded. A complete scan commonly takes 15–30 minutes and can take longer on systems with multiple drives or millions of files. `RUN-STORAGE-ANALYSIS.bat` uses the requirements already provisioned by the bootstrap and does not download updates.
 
 For broader access to protected Windows areas, right-click the batch file and select **Run as administrator**. A normal non-administrator run remains useful, but protected and system-managed space may remain unresolved.
 
@@ -74,8 +74,8 @@ runs/<timestamp>/
 ├── dashboard-snapshot.json     Reviewed dashboard dataset
 ├── report-snapshot.json        Reviewed report dataset
 ├── reviewed-data.json          Normalized analytical model
-├── SSD-storage-dashboard.html  Self-contained interactive dashboard
-├── SSD-storage-report.html     Self-contained detailed report
+├── Storage-analysis-dashboard.html  Self-contained interactive dashboard
+├── Storage-analysis-report.html     Self-contained detailed report
 └── run-summary.txt             Run metadata and output locations
 ```
 
@@ -87,7 +87,7 @@ The dashboard provides capacity metrics, category charts, a hierarchical treemap
 |---|---|
 | `INSTALL-AND-RUN.bat` | Clean-PC downloader, requirement repairer, and launcher |
 | `bootstrap.ps1` | Per-user portable Node provisioning and locked dependency verification |
-| `RUN-SSD-ANALYSIS.bat` | Fast launcher after bootstrap installation |
+| `RUN-STORAGE-ANALYSIS.bat` | Fast launcher after bootstrap installation |
 | `run-analysis.ps1` | Safe, timestamped orchestration pipeline |
 | `scan-storage.ps1` | Allocation-aware NTFS scanner and duplicate hasher |
 | `collect-system-evidence.ps1` | Windows volumes, special files, installed applications, sleep states, and protected-storage queries |

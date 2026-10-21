@@ -1,11 +1,11 @@
 @echo off
 setlocal
-title SSD Allocation-Based Scan - Install and Run
+title Storage Allocation-Based Scan - Install and Run
 
-set "BOOTSTRAP=%TEMP%\SSD-Allocation-Based-Scan-bootstrap.ps1"
+set "BOOTSTRAP=%TEMP%\Storage-Allocation-Based-Scan-bootstrap.ps1"
 set "BOOTSTRAP_URL=https://raw.githubusercontent.com/Ayoubslab/Storage-analysis/main/bootstrap.ps1"
 
-echo SSD Allocation-Based Scan
+echo Storage Allocation-Based Scan
 echo Downloading the verified project bootstrap...
 echo.
 

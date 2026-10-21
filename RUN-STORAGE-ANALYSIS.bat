@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title SSD allocation-based scan
+title Storage allocation-based scan
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-analysis.ps1" %*
 set "runExit=%ERRORLEVEL%"

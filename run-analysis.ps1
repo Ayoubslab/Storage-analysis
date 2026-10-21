@@ -15,9 +15,21 @@ function Assert-NativeSuccess {
     }
 }
 
+function Get-ScanRoots {
+    $eligibleTypes = @([IO.DriveType]::Fixed, [IO.DriveType]::Removable)
+    $roots = @([IO.DriveInfo]::GetDrives() |
+        Where-Object { $_.IsReady -and $eligibleTypes -contains $_.DriveType } |
+        ForEach-Object { $_.RootDirectory.FullName } |
+        Sort-Object -Unique)
+    if ($roots.Count -eq 0) {
+        throw 'No accessible fixed or removable local storage volumes were found.'
+    }
+    return $roots
+}
+
 function Find-Node {
     $candidates = @(
-        $env:SSD_SCAN_NODE,
+        $env:STORAGE_SCAN_NODE,
         (Join-Path $projectRoot '.runtime\node\node.exe')
     ) | Where-Object { $_ }
 
@@ -37,7 +49,7 @@ function Find-Npm {
     param([string] $NodePath)
 
     $candidates = @(
-        $env:SSD_SCAN_NPM,
+        $env:STORAGE_SCAN_NPM,
         (Join-Path (Split-Path -Parent $NodePath) 'npm.cmd')
     ) | Where-Object { $_ }
 
@@ -88,6 +100,7 @@ foreach ($relativePath in $requiredFiles) {
 $node = Find-Node
 $npm = Find-Npm -NodePath $node
 $nodeVersion = Assert-SupportedNode -NodePath $node
+$scanRoots = @(Get-ScanRoots)
 
 $requiredBuildTools = @(
     'dashboard\node_modules\.bin\vite.cmd',
@@ -103,9 +116,9 @@ $isAdministrator = ([Security.Principal.WindowsPrincipal] [Security.Principal.Wi
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
 
-Write-Host 'SSD allocation-based scan' -ForegroundColor Cyan
+Write-Host 'Storage allocation-based scan' -ForegroundColor Cyan
 Write-Host "Project: $projectRoot"
-Write-Host 'Scan root: C:\'
+Write-Host "Scan roots: $($scanRoots -join ', ')"
 Write-Host "Administrator: $isAdministrator"
 Write-Host "Node.js: $nodeVersion ($node)"
 Write-Host "npm: $npm"
@@ -121,11 +134,11 @@ if ($DryRun) {
 New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
 Write-Host "Run output: $runRoot"
 
-Write-Host '[1/6] Scanning allocated file storage and exact duplicate candidates...'
-& (Join-Path $projectRoot 'scan-storage.ps1') -Roots 'C:\' -OutputDirectory $dataDirectory
+Write-Host '[1/6] Scanning all accessible local storage volumes and exact duplicate candidates...'
+& (Join-Path $projectRoot 'scan-storage.ps1') -Roots $scanRoots -OutputDirectory $dataDirectory
 
 Write-Host '[2/6] Collecting Windows volume, system-file, and application evidence...'
-& (Join-Path $projectRoot 'collect-system-evidence.ps1') -OutputPath (Join-Path $dataDirectory 'system_evidence.json')
+& (Join-Path $projectRoot 'collect-system-evidence.ps1') -Roots $scanRoots -OutputPath (Join-Path $dataDirectory 'system_evidence.json')
 
 $reviewedData = Join-Path $runRoot 'reviewed-data.json'
 $dashboardSnapshot = Join-Path $runRoot 'dashboard-snapshot.json'
@@ -168,15 +181,16 @@ finally {
 }
 
 Write-Host '[6/6] Saving the portable dashboard and report...'
-$dashboardHtml = Join-Path $runRoot 'SSD-storage-dashboard.html'
-$reportHtml = Join-Path $runRoot 'SSD-storage-report.html'
+$dashboardHtml = Join-Path $runRoot 'Storage-analysis-dashboard.html'
+$reportHtml = Join-Path $runRoot 'Storage-analysis-report.html'
 Copy-Item -LiteralPath (Join-Path $projectRoot 'dashboard\dist\index.html') -Destination $dashboardHtml -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'report\dist\index.html') -Destination $reportHtml -Force
 
 @"
-SSD allocation-based scan completed
+Storage allocation-based scan completed
 Run: $runId
 Output: $runRoot
+Scan roots: $($scanRoots -join ', ')
 Administrator: $isAdministrator
 Node.js: $nodeVersion
 Dashboard: $dashboardHtml
