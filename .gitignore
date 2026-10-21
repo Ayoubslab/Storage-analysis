@@ -1,0 +1,23 @@
+# Machine-specific scan evidence and generated analysis
+/data/
+/reviewed-data.json
+/dashboard-snapshot.json
+/report-snapshot.json
+/runs/
+/LATEST-RUN.txt
+/test-output/
+/qa-screenshots/
+
+# Generated app data and builds can contain local paths
+/dashboard/src/data.json
+/report/src/data.json
+/dashboard/dist/
+/report/dist/
+/dashboard/.data-app-offline/
+/report/.data-app-offline/
+
+# Local tooling output
+/.playwright-cli/
+*.log
+Thumbs.db
+Desktop.ini
