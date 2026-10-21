@@ -18,6 +18,10 @@
 
 # Local tooling output
 /.playwright-cli/
+/node_modules/
+/dashboard/node_modules/
+/report/node_modules/
+/.runtime/
 *.log
 Thumbs.db
 Desktop.ini

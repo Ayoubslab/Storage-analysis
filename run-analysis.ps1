@@ -16,22 +16,55 @@ function Assert-NativeSuccess {
 }
 
 function Find-Node {
-    $bundled = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
-    if (Test-Path -LiteralPath $bundled) { return $bundled }
+    $candidates = @(
+        $env:SSD_SCAN_NODE,
+        (Join-Path $projectRoot '.runtime\node\node.exe')
+    ) | Where-Object { $_ }
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
 
     $command = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
 
-    throw 'Node.js was not found on PATH or in the Codex bundled runtime.'
+    throw 'Node.js was not found. Run INSTALL-AND-RUN.bat to provision the verified portable runtime.'
 }
 
-function Find-DataAppBuilder {
-    $pattern = Join-Path $env:USERPROFILE '.codex\plugins\cache\openai-curated-remote\data-analytics\*\scripts\data-app.mjs'
-    $builder = Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending |
-        Select-Object -First 1
-    if ($builder) { return $builder.FullName }
-    throw 'The Codex Data Analytics runtime was not found. Reinstall or enable the data-analytics plugin before rerunning the full visual report.'
+function Find-Npm {
+    param([string] $NodePath)
+
+    $candidates = @(
+        $env:SSD_SCAN_NPM,
+        (Join-Path (Split-Path -Parent $NodePath) 'npm.cmd')
+    ) | Where-Object { $_ }
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    $command = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+
+    throw 'npm was not found beside Node.js or on PATH. Run INSTALL-AND-RUN.bat to repair the runtime.'
+}
+
+function Assert-SupportedNode {
+    param([string] $NodePath)
+
+    $versionText = (& $NodePath -p 'process.versions.node').Trim()
+    Assert-NativeSuccess 'Node.js version check'
+    $version = [version] $versionText
+    $supported = (($version.Major -eq 20 -and $version -ge [version] '20.19.0') -or
+        ($version.Major -ge 22 -and $version -ge [version] '22.12.0'))
+    if (-not $supported) {
+        throw "Node.js $versionText is not supported. Vite requires Node.js 20.19+ or 22.12+. Run INSTALL-AND-RUN.bat to provision a compatible runtime."
+    }
+    return $versionText
 }
 
 $requiredFiles = @(
@@ -40,16 +73,32 @@ $requiredFiles = @(
     'analyze-storage.mjs',
     'build-dashboard-snapshot.mjs',
     'build-report-snapshot.mjs',
+    'dashboard\package.json',
+    'dashboard\package-lock.json',
     'dashboard\src\content\dashboard\DashboardContent.jsx',
+    'report\package.json',
+    'report\package-lock.json',
     'report\src\content\report\ReportContent.jsx'
 )
 foreach ($relativePath in $requiredFiles) {
     $fullPath = Join-Path $projectRoot $relativePath
-    if (-not (Test-Path -LiteralPath $fullPath)) { throw "Required project file is missing: $relativePath" }
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { throw "Required project file is missing: $relativePath" }
 }
 
 $node = Find-Node
-$dataAppBuilder = Find-DataAppBuilder
+$npm = Find-Npm -NodePath $node
+$nodeVersion = Assert-SupportedNode -NodePath $node
+
+$requiredBuildTools = @(
+    'dashboard\node_modules\.bin\vite.cmd',
+    'report\node_modules\.bin\vite.cmd'
+)
+foreach ($relativePath in $requiredBuildTools) {
+    if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $relativePath) -PathType Leaf)) {
+        throw "Build dependency is missing: $relativePath. Run INSTALL-AND-RUN.bat to install or repair all locked dependencies."
+    }
+}
+
 $isAdministrator = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
@@ -58,24 +107,24 @@ Write-Host 'SSD allocation-based scan' -ForegroundColor Cyan
 Write-Host "Project: $projectRoot"
 Write-Host 'Scan root: C:\'
 Write-Host "Administrator: $isAdministrator"
-Write-Host "Node.js: $node"
-Write-Host "Data app builder: $dataAppBuilder"
+Write-Host "Node.js: $nodeVersion ($node)"
+Write-Host "npm: $npm"
 if (-not $isAdministrator) {
     Write-Warning 'Protected Windows areas, shadow storage, restore points, reserved storage, and some NTFS metadata may remain unresolved. Run as administrator for broader coverage.'
 }
 
 if ($DryRun) {
-    Write-Host 'Dry run passed. No scan or output files were created.' -ForegroundColor Green
-    exit 0
+    Write-Host 'Self-check passed. No scan or output files were created.' -ForegroundColor Green
+    return
 }
 
 New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
 Write-Host "Run output: $runRoot"
 
-Write-Host '[1/7] Scanning allocated file storage and exact duplicate candidates...'
+Write-Host '[1/6] Scanning allocated file storage and exact duplicate candidates...'
 & (Join-Path $projectRoot 'scan-storage.ps1') -Roots 'C:\' -OutputDirectory $dataDirectory
 
-Write-Host '[2/7] Collecting Windows volume, system-file, and application evidence...'
+Write-Host '[2/6] Collecting Windows volume, system-file, and application evidence...'
 & (Join-Path $projectRoot 'collect-system-evidence.ps1') -OutputPath (Join-Path $dataDirectory 'system_evidence.json')
 
 $reviewedData = Join-Path $runRoot 'reviewed-data.json'
@@ -83,43 +132,53 @@ $dashboardSnapshot = Join-Path $runRoot 'dashboard-snapshot.json'
 $reportSnapshot = Join-Path $runRoot 'report-snapshot.json'
 $sourcePrefix = "runs/$runId/data"
 
-Write-Host '[3/7] Building the reviewed analysis dataset...'
+Write-Host '[3/6] Building the reviewed analysis dataset...'
 & $node (Join-Path $projectRoot 'analyze-storage.mjs') $dataDirectory $reviewedData
 Assert-NativeSuccess 'Dataset analysis'
 
-Write-Host '[4/7] Building dashboard and report snapshots...'
+Write-Host '[4/6] Building dashboard and report snapshots...'
 & $node (Join-Path $projectRoot 'build-dashboard-snapshot.mjs') $reviewedData $dashboardSnapshot $sourcePrefix
 Assert-NativeSuccess 'Dashboard snapshot generation'
 & $node (Join-Path $projectRoot 'build-report-snapshot.mjs') $dashboardSnapshot $reportSnapshot
 Assert-NativeSuccess 'Report snapshot generation'
 
-Write-Host '[5/7] Preparing isolated visualization projects for this run...'
-Copy-Item -LiteralPath (Join-Path $projectRoot 'dashboard') -Destination $runRoot -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'report') -Destination $runRoot -Recurse -Force
-Copy-Item -LiteralPath $dashboardSnapshot -Destination (Join-Path $runRoot 'dashboard\src\data.json') -Force
-Copy-Item -LiteralPath $reportSnapshot -Destination (Join-Path $runRoot 'report\src\data.json') -Force
+Write-Host '[5/6] Compiling self-contained interactive HTML files...'
+Copy-Item -LiteralPath $dashboardSnapshot -Destination (Join-Path $projectRoot 'dashboard\src\data.json') -Force
+Copy-Item -LiteralPath $reportSnapshot -Destination (Join-Path $projectRoot 'report\src\data.json') -Force
 
-Write-Host '[6/7] Compiling the interactive dashboard and detailed report...'
-$dashboardProject = Join-Path $runRoot 'dashboard'
-$reportProject = Join-Path $runRoot 'report'
-& $node $dataAppBuilder build --project-dir $dashboardProject --separate-data
-Assert-NativeSuccess 'Dashboard build'
-& $node $dataAppBuilder build --project-dir $reportProject --separate-data
-Assert-NativeSuccess 'Report build'
+$previousPath = $env:PATH
+$env:PATH = "$(Split-Path -Parent $node);$previousPath"
+try {
+    Push-Location (Join-Path $projectRoot 'dashboard')
+    try {
+        & $npm run build
+        Assert-NativeSuccess 'Dashboard build'
+    }
+    finally { Pop-Location }
 
-Write-Host '[7/7] Exporting portable offline HTML files...'
-$dashboardHtml = Join-Path $dashboardProject '.data-app-offline\exports\SSD-storage-dashboard.html'
-$reportHtml = Join-Path $reportProject '.data-app-offline\exports\SSD-storage-report.html'
-& $node $dataAppBuilder export-offline --project-dir $dashboardProject --output $dashboardHtml
-Assert-NativeSuccess 'Dashboard offline export'
-& $node $dataAppBuilder export-offline --project-dir $reportProject --output $reportHtml
-Assert-NativeSuccess 'Report offline export'
+    Push-Location (Join-Path $projectRoot 'report')
+    try {
+        & $npm run build
+        Assert-NativeSuccess 'Report build'
+    }
+    finally { Pop-Location }
+}
+finally {
+    $env:PATH = $previousPath
+}
+
+Write-Host '[6/6] Saving the portable dashboard and report...'
+$dashboardHtml = Join-Path $runRoot 'SSD-storage-dashboard.html'
+$reportHtml = Join-Path $runRoot 'SSD-storage-report.html'
+Copy-Item -LiteralPath (Join-Path $projectRoot 'dashboard\dist\index.html') -Destination $dashboardHtml -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'report\dist\index.html') -Destination $reportHtml -Force
 
 @"
 SSD allocation-based scan completed
 Run: $runId
 Output: $runRoot
 Administrator: $isAdministrator
+Node.js: $nodeVersion
 Dashboard: $dashboardHtml
 Report: $reportHtml
 No files were deleted, moved, uninstalled, or cleaned.

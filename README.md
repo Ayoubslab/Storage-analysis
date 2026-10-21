@@ -26,7 +26,27 @@ Unlike application lists that rely on estimated installation sizes, this project
 - Keeps protected or unresolved space as an explicit uncertainty bucket instead of estimating it
 - Separates cleanup candidates into conditional-safe, review-required, settings-dependent, and system-tool-only classes
 
-## Run a fresh analysis
+## Start on a clean Windows PC
+
+Download only [`INSTALL-AND-RUN.bat`](https://github.com/Ayoubslab/Storage-analysis/raw/refs/heads/main/INSTALL-AND-RUN.bat), then double-click it. No Git, Node.js, npm, Codex, or manual project download is required.
+
+The bootstrap performs these checks on every launch:
+
+1. Downloads the latest project source from this repository
+2. Reuses a compatible Node.js runtime or downloads a portable Node.js 22 LTS runtime into the per-user project directory
+3. Verifies the official Node.js ZIP against its published SHA-256 checksum before use
+4. Reinstalls the exact dependency tree from both `package-lock.json` files with `npm ci`
+5. Runs the project's complete preflight self-check before scanning
+
+The project is installed under `%LOCALAPPDATA%\SSD-Allocation-Based-Scan`. Nothing is installed system-wide and no administrator access is required for installation. Internet access is required for the bootstrap and dependency download.
+
+To install or repair every requirement without starting a disk scan, run:
+
+```bat
+INSTALL-AND-RUN.bat -CheckOnly
+```
+
+## Run a fresh analysis from an installed project
 
 Double-click:
 
@@ -34,7 +54,7 @@ Double-click:
 RUN-SSD-ANALYSIS.bat
 ```
 
-Each execution creates a new timestamped directory under `runs/`, preserving previous results. A complete scan commonly takes 15–30 minutes and can take longer on systems with millions of files.
+Each execution creates a new timestamped directory under `runs/`, preserving previous results. A complete scan commonly takes 15–30 minutes and can take longer on systems with millions of files. `RUN-SSD-ANALYSIS.bat` uses the requirements already provisioned by the bootstrap and does not download updates.
 
 For broader access to protected Windows areas, right-click the batch file and select **Run as administrator**. A normal non-administrator run remains useful, but protected and system-managed space may remain unresolved.
 
@@ -51,19 +71,12 @@ Each completed run contains:
 ```text
 runs/<timestamp>/
 ├── data/                       Raw CSV, compressed CSV, and JSON evidence
-├── dashboard/                  Interactive dashboard source and compiled build
-├── report/                     Detailed report source and compiled build
 ├── dashboard-snapshot.json     Reviewed dashboard dataset
 ├── report-snapshot.json        Reviewed report dataset
 ├── reviewed-data.json          Normalized analytical model
+├── SSD-storage-dashboard.html  Self-contained interactive dashboard
+├── SSD-storage-report.html     Self-contained detailed report
 └── run-summary.txt             Run metadata and output locations
-```
-
-Portable outputs are generated at:
-
-```text
-runs/<timestamp>/dashboard/.data-app-offline/exports/SSD-storage-dashboard.html
-runs/<timestamp>/report/.data-app-offline/exports/SSD-storage-report.html
 ```
 
 The dashboard provides capacity metrics, category charts, a hierarchical treemap, searchable folder and file rankings, cleanup classifications, duplicate groups, and scan-coverage evidence.
@@ -72,7 +85,9 @@ The dashboard provides capacity metrics, category charts, a hierarchical treemap
 
 | Path | Purpose |
 |---|---|
-| `RUN-SSD-ANALYSIS.bat` | One-click Windows launcher |
+| `INSTALL-AND-RUN.bat` | Clean-PC downloader, requirement repairer, and launcher |
+| `bootstrap.ps1` | Per-user portable Node provisioning and locked dependency verification |
+| `RUN-SSD-ANALYSIS.bat` | Fast launcher after bootstrap installation |
 | `run-analysis.ps1` | Safe, timestamped orchestration pipeline |
 | `scan-storage.ps1` | Allocation-aware NTFS scanner and duplicate hasher |
 | `collect-system-evidence.ps1` | Windows volumes, special files, installed applications, sleep states, and protected-storage queries |
@@ -86,10 +101,9 @@ The dashboard provides capacity metrics, category charts, a hierarchical treemap
 
 - Windows 10 or Windows 11
 - PowerShell 5.1 or later
-- Node.js compatible with the installed Codex Data Analytics runtime
-- The Codex Data Analytics plugin/runtime for compiling the interactive dashboard and report
+- Internet access for the initial bootstrap and dependency verification
 
-The launcher prefers Codex's bundled Node.js runtime and stops with a clear error before scanning if required build dependencies are missing.
+PowerShell 5.1 is included with supported Windows versions. The clean-PC launcher provisions the compatible portable Node.js and npm runtime itself. The application has no Codex runtime dependency.
 
 ## Privacy
 
