@@ -22,6 +22,15 @@
 /dashboard/node_modules/
 /report/node_modules/
 /.runtime/
+/coverage/
+/.vscode/
+/.idea/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.tmp
 *.log
 Thumbs.db
 Desktop.ini

@@ -105,9 +105,35 @@ The dashboard provides capacity metrics, category charts, a hierarchical treemap
 
 PowerShell 5.1 is included with supported Windows versions. The clean-PC launcher provisions the compatible portable Node.js and npm runtime itself. The application has no Codex runtime dependency.
 
+The standalone scan and build path does not read Codex files, require Codex credentials, or call Codex APIs. The completed dashboard and report are self-contained HTML files that open directly in a normal web browser.
+
 ## Privacy
 
 Storage inventories can reveal usernames, application names, private directory names, and document filenames. Raw scans, reviewed datasets, generated dashboards, screenshots, and future run directories are excluded from Git by default. Review generated evidence carefully before sharing it.
+
+## Repository publishing policy
+
+Only reusable project files belong in this repository:
+
+- Batch and PowerShell launchers and scanners
+- Node.js analysis and snapshot builders
+- Dashboard and report source code
+- Dependency manifests and lockfiles
+- Generic documentation and tests
+
+The following stay on the computer that performed the scan and must not be committed:
+
+- Raw file inventories, duplicate lists, and Windows system evidence
+- Reviewed datasets and dashboard/report snapshots
+- Generated HTML reports, screenshots, logs, and test output
+- `node_modules`, portable runtimes, caches, editor settings, local environment files, and credentials
+
+These exclusions are enforced by [`.gitignore`](.gitignore). Before publishing changes, verify the boundary with:
+
+```powershell
+git status --short --ignored
+git diff --check
+```
 
 ## Limitations
 
