@@ -23,6 +23,13 @@ function Invoke-CapturedCommand {
     }
 }
 
+function Get-OptionalPropertyValue {
+    param($InputObject, [string] $Name)
+    $property = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
 $volumeRows = @(Get-Volume | ForEach-Object {
     [ordered]@{
         drive_letter = [string]$_.DriveLetter
@@ -79,15 +86,18 @@ foreach ($registryPath in @(
     'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
 )) {
     try {
-        $installedApplications += @(Get-ItemProperty $registryPath -ErrorAction SilentlyContinue | Where-Object DisplayName | ForEach-Object {
+        $installedApplications += @(Get-ItemProperty $registryPath -ErrorAction SilentlyContinue | ForEach-Object {
+            $displayName = Get-OptionalPropertyValue $_ 'DisplayName'
+            if ([string]::IsNullOrWhiteSpace([string]$displayName)) { return }
+            $estimatedSize = Get-OptionalPropertyValue $_ 'EstimatedSize'
             [ordered]@{
-                display_name = [string]$_.DisplayName
-                display_version = [string]$_.DisplayVersion
-                publisher = [string]$_.Publisher
-                install_date = [string]$_.InstallDate
-                install_location = [string]$_.InstallLocation
-                estimated_size_kb = if ($null -eq $_.EstimatedSize) { $null } else { [long]$_.EstimatedSize }
-                registry_key = [string]$_.PSPath
+                display_name = [string]$displayName
+                display_version = [string](Get-OptionalPropertyValue $_ 'DisplayVersion')
+                publisher = [string](Get-OptionalPropertyValue $_ 'Publisher')
+                install_date = [string](Get-OptionalPropertyValue $_ 'InstallDate')
+                install_location = [string](Get-OptionalPropertyValue $_ 'InstallLocation')
+                estimated_size_kb = if ($null -eq $estimatedSize) { $null } else { [long]$estimatedSize }
+                registry_key = [string](Get-OptionalPropertyValue $_ 'PSPath')
             }
         })
     } catch {
